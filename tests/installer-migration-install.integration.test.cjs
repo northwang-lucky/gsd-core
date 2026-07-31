@@ -353,11 +353,11 @@ function assertFreshInstallContract(runtime, targetDir) {
       'Kimi should install GSD subagent YAML'
     );
   } else if (contract.surface === 'clinerules') {
-    // #787: Cline now uses the .clinerules/ directory form (rules at gsd.md).
+    // #787 + 布局修复：Cline 规则文件落在现行布局 rules/gsd.md（.clinerules/ 已废弃）
     assert.match(
-      fs.readFileSync(path.join(targetDir, '.clinerules', 'gsd.md'), 'utf8'),
-      /GSD workflows live in `gsd-core\/workflows\/`/,
-      'Cline should install .clinerules/gsd.md guidance'
+      fs.readFileSync(path.join(targetDir, 'rules', 'gsd.md'), 'utf8'),
+      /GSD workflows live in `[^`]*gsd-core\/workflows\/`/,
+      'Cline should install rules/gsd.md guidance'
     );
   } else if (contract.surface === 'global-artifacts-noop') {
     assert.equal(

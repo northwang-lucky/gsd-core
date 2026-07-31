@@ -741,7 +741,16 @@ const capabilities = {
             "converter": "convertClaudeCommandToClineSkill"
           }
         ],
-        "local": []
+        "local": [
+          {
+            "kind": "skills",
+            "destSubpath": "skills",
+            "prefix": "gsd-",
+            "nesting": "nested",
+            "recursive": false,
+            "converter": "convertClaudeCommandToClineSkill"
+          }
+        ]
       },
       "commandStyle": "slash-hyphen",
       "hooksSurface": "cline-rules",
@@ -774,7 +783,6 @@ const capabilities = {
         "reapplyCommand": "/gsd-update --reapply",
         "frontmatterDialect": "cline",
         "skipSharedHooksInstall": true,
-        "localTargetIsProjectRoot": true,
         "clineRulesSurface": true,
         "localCommandsViaRules": true
       }
@@ -5197,7 +5205,16 @@ const runtimes = {
             "converter": "convertClaudeCommandToClineSkill"
           }
         ],
-        "local": []
+        "local": [
+          {
+            "kind": "skills",
+            "destSubpath": "skills",
+            "prefix": "gsd-",
+            "nesting": "nested",
+            "recursive": false,
+            "converter": "convertClaudeCommandToClineSkill"
+          }
+        ]
       },
       "commandStyle": "slash-hyphen",
       "hooksSurface": "cline-rules",
@@ -5230,7 +5247,6 @@ const runtimes = {
         "reapplyCommand": "/gsd-update --reapply",
         "frontmatterDialect": "cline",
         "skipSharedHooksInstall": true,
-        "localTargetIsProjectRoot": true,
         "clineRulesSurface": true,
         "localCommandsViaRules": true
       }

@@ -1354,10 +1354,11 @@ function convertClaudeCommandToCodebuddyCommand(content, commandName) {
 function convertClaudeToCliineMarkdown(content) {
   let converted = content;
   // Cline uses the same tool names as Claude Code — no tool name conversion needed
-  converted = converted.replace(/`\.\/CLAUDE\.md`/g, '`.clinerules`');
-  converted = converted.replace(/\.\/CLAUDE\.md/g, '.clinerules');
-  converted = converted.replace(/`CLAUDE\.md`/g, '`.clinerules`');
-  converted = converted.replace(/\bCLAUDE\.md\b/g, '.clinerules');
+  // CLAUDE.md 的对应物是 GSD 写入的规则文件 .cline/rules/gsd.md
+  converted = converted.replace(/`\.\/CLAUDE\.md`/g, '`.cline/rules/gsd.md`');
+  converted = converted.replace(/\.\/CLAUDE\.md/g, '.cline/rules/gsd.md');
+  converted = converted.replace(/`CLAUDE\.md`/g, '`.cline/rules/gsd.md`');
+  converted = converted.replace(/\bCLAUDE\.md\b/g, '.cline/rules/gsd.md');
   // Slash forms first (most specific — superset of bare forms)
   converted = converted.replace(/\.claude\/skills\//g, '.cline/skills/');
   converted = converted.replace(/\.\/\.claude\//g, './.cline/');

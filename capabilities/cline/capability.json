@@ -30,7 +30,16 @@
           "converter": "convertClaudeCommandToClineSkill"
         }
       ],
-      "local": []
+      "local": [
+        {
+          "kind": "skills",
+          "destSubpath": "skills",
+          "prefix": "gsd-",
+          "nesting": "nested",
+          "recursive": false,
+          "converter": "convertClaudeCommandToClineSkill"
+        }
+      ]
     },
     "commandStyle": "slash-hyphen",
     "hooksSurface": "cline-rules",
@@ -63,7 +72,6 @@
       "reapplyCommand": "/gsd-update --reapply",
       "frontmatterDialect": "cline",
       "skipSharedHooksInstall": true,
-      "localTargetIsProjectRoot": true,
       "clineRulesSurface": true,
       "localCommandsViaRules": true
     }

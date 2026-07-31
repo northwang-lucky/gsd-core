@@ -27,6 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import {
   CURSOR_HOOK_EVENTS,
   CURSOR_EVENT_SCRIPT_MAP,
@@ -976,14 +977,26 @@ function buildHookCommand(configDir: string, hookName: string, opts?: BuildHookC
 // Cline helpers
 // ---------------------------------------------------------------------------
 
-function buildClineRulesBody(): string {
+/**
+ * Engine reference prefix used inside the rules body. Local installs resolve
+ * it relative to the project root (`.cline/`), global installs relative to the
+ * user home (`~/.cline/`, honoring CLINE_CONFIG_DIR overrides via targetDir).
+ */
+function clineEngineRefPrefix(targetDir: string, isGlobalInstall: boolean): string {
+  const base = isGlobalInstall ? os.homedir() : process.cwd();
+  const rel = path.relative(base, targetDir).split(path.sep).join('/');
+  if (isGlobalInstall) return rel ? `~/${rel}/` : '~/';
+  return rel ? `${rel}/` : './';
+}
+
+function buildClineRulesBody(enginePrefix = '.cline/'): string {
   return [
     '# GSD Core — Git. Ship. Done.',
     '',
-    '- GSD workflows live in `gsd-core/workflows/`. Load the relevant workflow when',
+    `- GSD workflows live in \`${enginePrefix}gsd-core/workflows/\`. Load the relevant workflow when`,
     '  the user runs a `/gsd-*` command.',
-    '- GSD agents live in `agents/`. Use the matching agent when spawning subagents.',
-    '- GSD tools are at `gsd-core/bin/gsd-tools.cjs`. Run with `node`.',
+    `- GSD agents live in \`${enginePrefix}agents/\`. Use the matching agent when spawning subagents.`,
+    `- GSD tools are at \`${enginePrefix}gsd-core/bin/gsd-tools.cjs\`. Run with \`node\`.`,
     '- Planning artifacts live in `.planning/`. Never edit them outside a GSD workflow.',
     '- Do not apply GSD workflows unless the user explicitly asks for them.',
     '- When a GSD command triggers a deliverable (feature, fix, docs), offer the next',
@@ -991,8 +1004,8 @@ function buildClineRulesBody(): string {
   ].join('\n') + '\n';
 }
 
-function buildClineAgentsMdBody(): string {
-  return buildClineRulesBody();
+function buildClineAgentsMdBody(enginePrefix = '~/.cline/'): string {
+  return buildClineRulesBody(enginePrefix);
 }
 
 function buildClinePreToolUseHook(): string {
@@ -1010,7 +1023,11 @@ process.stdin.on('end', () => {
   let input;
   try { input = JSON.parse(raw || '{}'); } catch { return allow(); }
   try {
+    // Cline's documented payload nests the call under preToolUse
+    // ({ taskId, clineVersion, preToolUse: { tool, parameters } }). The
+    // flattened Claude-style fields are kept as a fallback only.
     const tool = String(
+      (input.preToolUse && input.preToolUse.tool) ||
       input.toolName || input.tool_name || input.tool ||
       (input.toolInput && input.toolInput.name) || (input.tool_input && input.tool_input.name) || ''
     ).toLowerCase();
@@ -1077,37 +1094,128 @@ function mergeGsdAgentsMd(filePath: string, gsdContent: string): void {
 // writeClineArtifacts
 // ---------------------------------------------------------------------------
 
+/**
+ * Remove the GSD-managed files from a legacy `.clinerules/` directory
+ * (deprecated layout, pre-#787-migration installs). User-owned rule files and
+ * a user-owned single-file `.clinerules` are left untouched; directories are
+ * pruned only when empty.
+ */
+function removeLegacyClineRulesDir(clinerulesDir: string): void {
+  try {
+    if (!fs.existsSync(clinerulesDir)) return;
+    const st = fs.lstatSync(clinerulesDir);
+    // 单文件形态只可能是用户自己的规则文件（GSD 从未以文件形态发布过），不动
+    if (st.isFile() || st.isSymbolicLink()) return;
+    for (const rel of ['gsd.md', path.join('hooks', 'PreToolUse')]) {
+      try {
+        fs.unlinkSync(path.join(clinerulesDir, rel));
+        console.log(`  ${green}✓${reset} Removed legacy ${path.join('.clinerules', rel)}`);
+      } catch { /* not present — fine */ }
+    }
+    // 空目录顺手收掉；用户自己放的规则文件会让 rmdir 失败并保留
+    try { fs.rmdirSync(path.join(clinerulesDir, 'hooks')); } catch { /* non-empty */ }
+    try { fs.rmdirSync(clinerulesDir); } catch { /* non-empty */ }
+  } catch { /* best-effort legacy cleanup */ }
+}
+
+/** Recursively remove directories that are empty (post-order). Non-empty dirs stay. */
+function removeEmptyDirs(dir: string): void {
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    for (const entry of fs.readdirSync(dir)) removeEmptyDirs(path.join(dir, entry));
+    fs.rmdirSync(dir);
+  } catch { /* not empty or unreadable — leave it */ }
+}
+
+/**
+ * Remove the root-level spill left by pre-fix cline LOCAL installs, which
+ * hoisted targetDir to the project root and dumped gsd-core/, agents/,
+ * scripts/ and state files next to the user's sources. Only files that still
+ * match their recorded manifest hash are deleted (user modifications win);
+ * directories are pruned only when they become empty.
+ */
+function cleanupLegacyClineLocalSpill(cwd: string): void {
+  const manifestPath = path.join(cwd, 'gsd-file-manifest.json');
+  if (!fs.existsSync(manifestPath)) return;
+  let manifest: { files?: Record<string, string> };
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch { return; }
+  const files = manifest && manifest.files;
+  if (!files || typeof files !== 'object') return;
+
+  let removed = 0;
+  for (const [relPath, recordedHash] of Object.entries(files)) {
+    // 新布局（.cline/ 下）的产物不属于旧溢出，跳过
+    if (relPath.startsWith('.cline/') || relPath.startsWith('.cline\\')) continue;
+    const abs = path.join(cwd, relPath);
+    try {
+      if (!fs.existsSync(abs) || !fs.lstatSync(abs).isFile()) continue;
+      const current = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
+      if (current !== recordedHash) {
+        console.warn(`  ${yellow}⚠${reset} Keeping user-modified legacy file: ${relPath}`);
+        continue;
+      }
+      fs.unlinkSync(abs);
+      removed++;
+    } catch { /* best-effort per file */ }
+  }
+
+  // 旧 manifest 只追踪 .cjs —— scripts/changeset/README.md 从未入册。
+  // 与随包发布的副本逐字节一致时才删除（用户改过的保留）
+  try {
+    const shipped = path.join(__dirname, '..', '..', '..', 'scripts', 'changeset', 'README.md');
+    const leftover = path.join(cwd, 'scripts', 'changeset', 'README.md');
+    if (fs.existsSync(leftover) && fs.existsSync(shipped) &&
+        fs.readFileSync(leftover, 'utf8') === fs.readFileSync(shipped, 'utf8')) {
+      fs.unlinkSync(leftover);
+      removed++;
+    }
+  } catch { /* best-effort */ }
+
+  // 旧溢出目录清空后才移除；含有用户文件的目录会保留
+  for (const top of ['agents', 'gsd-core', 'scripts']) {
+    removeEmptyDirs(path.join(cwd, top));
+  }
+  // 状态文件（manifest 自身也在根目录溢出之列）
+  for (const stateFile of ['gsd-file-manifest.json', 'gsd-install-state.json', '.gsd-profile']) {
+    try { fs.unlinkSync(path.join(cwd, stateFile)); } catch { /* not present */ }
+  }
+  if (removed > 0) {
+    console.log(`  ${green}✓${reset} Removed ${removed} legacy root-level artifact(s) from the pre-.cline layout`);
+  }
+}
+
 function writeClineArtifacts(targetDir: string, isGlobalInstall: boolean): string[] {
   const written: string[] = [];
-  const clinerulesDir = path.join(targetDir, '.clinerules');
+  const enginePrefix = clineEngineRefPrefix(targetDir, isGlobalInstall);
 
-  try {
-    if (fs.existsSync(clinerulesDir)) {
-      const st = fs.lstatSync(clinerulesDir);
-      if (st.isFile() || st.isSymbolicLink()) {
-        fs.unlinkSync(clinerulesDir);
-        console.log(`  ${green}✓${reset} Migrated legacy .clinerules to directory form`);
-      }
-    }
-  } catch { /* best-effort migration */ }
+  // 先清旧布局：deprecated 的 .clinerules/（local 在项目根、global 在 ~/.cline/）
+  removeLegacyClineRulesDir(
+    isGlobalInstall ? path.join(targetDir, '.clinerules') : path.join(process.cwd(), '.clinerules')
+  );
+  // local 再清旧版本洒在项目根的引擎/agents/scripts/状态文件
+  if (!isGlobalInstall) cleanupLegacyClineLocalSpill(process.cwd());
 
-  fs.mkdirSync(clinerulesDir, { recursive: true });
-  fs.writeFileSync(path.join(clinerulesDir, 'gsd.md'), buildClineRulesBody());
-  written.push('.clinerules/gsd.md');
-  console.log(`  ${green}✓${reset} Wrote .clinerules/gsd.md`);
+  // 现行布局：规则在 <configDir>/rules/，hook 在 <configDir>/hooks/
+  const rulesDir = path.join(targetDir, 'rules');
+  fs.mkdirSync(rulesDir, { recursive: true });
+  fs.writeFileSync(path.join(rulesDir, 'gsd.md'), buildClineRulesBody(enginePrefix));
+  written.push('rules/gsd.md');
+  console.log(`  ${green}✓${reset} Wrote rules/gsd.md`);
 
-  const hooksDir = path.join(clinerulesDir, 'hooks');
+  const hooksDir = path.join(targetDir, 'hooks');
   fs.mkdirSync(hooksDir, { recursive: true });
   const hookPath = path.join(hooksDir, 'PreToolUse');
   fs.writeFileSync(hookPath, buildClinePreToolUseHook());
   try { fs.chmodSync(hookPath, 0o755); } catch { /* Windows: hooks unsupported anyway */ }
-  written.push('.clinerules/hooks/PreToolUse');
-  console.log(`  ${green}✓${reset} Wrote .clinerules/hooks/PreToolUse`);
+  written.push('hooks/PreToolUse');
+  console.log(`  ${green}✓${reset} Wrote hooks/PreToolUse`);
 
   if (isGlobalInstall) {
     try {
       const agentsPath = path.join(os.homedir(), '.agents', 'AGENTS.md');
-      mergeGsdAgentsMd(agentsPath, buildClineAgentsMdBody());
+      mergeGsdAgentsMd(agentsPath, buildClineAgentsMdBody(enginePrefix));
       console.log(`  ${green}✓${reset} Merged GSD instructions into ~/.agents/AGENTS.md`);
     } catch (err) {
       console.warn(`  ${yellow}⚠${reset} Could not write ~/.agents/AGENTS.md: ${(err as Error).message}`);
@@ -2422,6 +2530,8 @@ export = {
   buildClinePreToolUseHook,
   mergeGsdAgentsMd,
   writeClineArtifacts,
+  removeLegacyClineRulesDir,
+  cleanupLegacyClineLocalSpill,
   GSD_AGENTS_MD_MARKER,
   GSD_AGENTS_MD_CLOSE_MARKER,
 

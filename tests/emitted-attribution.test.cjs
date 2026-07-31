@@ -191,16 +191,16 @@ test('synthesized paths are exempt from attribution', () => {
 test('code-derived paths attribute to their emitting source file', () => {
   // Phase 2 deliberately refused to mark these exempt; this is why.
   const r = diffEmitted({
-    baseline: { cline: { '.clinerules/gsd.md': 'aaa' } },
-    current: { cline: { '.clinerules/gsd.md': 'bbb' } },
+    baseline: { cline: { 'rules/gsd.md': 'aaa' } },
+    current: { cline: { 'rules/gsd.md': 'bbb' } },
     changedPaths: ['src/runtime-hooks-surface.cts'],
   });
   assert.equal(r.unattributable.length, 0);
   assert.equal(r.attributed[0].via, 'src/runtime-hooks-surface.cts');
 
   const blind = diffEmitted({
-    baseline: { cline: { '.clinerules/gsd.md': 'aaa' } },
-    current: { cline: { '.clinerules/gsd.md': 'bbb' } },
+    baseline: { cline: { 'rules/gsd.md': 'aaa' } },
+    current: { cline: { 'rules/gsd.md': 'bbb' } },
     changedPaths: ['README.md'],
   });
   assert.equal(blind.unattributable.length, 1, 'had these been exempt, this ripple would be invisible forever');

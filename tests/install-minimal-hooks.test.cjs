@@ -389,9 +389,9 @@ describe('install: --minimal honoured for every runtime in --local mode', () => 
   }
 });
 
-describe('install: Cline --minimal (rules-based, no skills/ dir)', () => {
+describe('install: Cline --minimal (skills + rules)', () => {
   for (const scope of ['global', 'local']) {
-    test(`cline --${scope} --minimal: mode=minimal, zero agents, .clinerules present`, () => {
+    test(`cline --${scope} --minimal: mode=minimal, rules/gsd.md present`, () => {
       const { manifest, configDir, root } = runMinimalInstall({
         runtime: 'cline', scope, extraArgs: ['--minimal'],
       });
@@ -399,7 +399,7 @@ describe('install: Cline --minimal (rules-based, no skills/ dir)', () => {
         assert.ok(manifest, 'cline must produce manifest');
         assert.strictEqual(manifest.mode, 'minimal');
         assert.strictEqual(manifestAgentCount(manifest), 0);
-        assert.ok(fs.existsSync(path.join(configDir, '.clinerules')));
+        assert.ok(fs.existsSync(path.join(configDir, 'rules', 'gsd.md')));
       } finally {
         cleanup(root);
       }

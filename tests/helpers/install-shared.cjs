@@ -108,10 +108,10 @@ const MANIFEST_FAMILIES = [
  */
 const MINIMUM_MANIFEST_FAMILIES = 19;
 
-// Runtimes that emit per-skill files under skills/ (not rules-based or commands-based)
+// Runtimes that emit per-skill files under skills/ (not commands-based)
 const SKILL_RUNTIMES = [
   'claude', 'opencode', 'kilo', 'codex', 'copilot', 'antigravity',
-  'cursor', 'augment', 'trae', 'qwen', 'codebuddy',
+  'cursor', 'augment', 'trae', 'qwen', 'codebuddy', 'cline',
 ];
 
 // ─── Golden install-parity manifest (canonical — issue #2266) ────────────────
@@ -460,7 +460,7 @@ function runMinimalInstall({ runtime, scope, extraArgs = [], installScript = INS
       claude: '.claude', opencode: '.opencode', kilo: '.kilo',
       codex: '.codex', copilot: '.github', antigravity: '.agents', cursor: '.cursor',
       windsurf: '.windsurf', augment: '.augment', trae: '.trae', qwen: '.qwen',
-      codebuddy: '.codebuddy', cline: '.',
+      codebuddy: '.codebuddy', cline: '.cline',
     };
     let configDir;
     let cwd = process.cwd();
@@ -471,7 +471,7 @@ function runMinimalInstall({ runtime, scope, extraArgs = [], installScript = INS
     } else {
       args.push('--local');
       cwd = root;
-      configDir = runtime === 'cline' ? root : path.join(root, LOCAL_DIR_NAME[runtime]);
+      configDir = path.join(root, LOCAL_DIR_NAME[runtime]);
     }
     args.push(...extraArgs);
     const result = spawnSync(process.execPath, args, {

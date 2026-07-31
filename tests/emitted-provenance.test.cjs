@@ -318,7 +318,7 @@ test('spot-check: Windows-only .cmd shim is code-derived from its generator, not
 });
 
 test('spot-check: cline rules are code-derived (attributable), not exempt', () => {
-  for (const rel of ['.clinerules/gsd.md', '.clinerules/hooks/PreToolUse']) {
+  for (const rel of ['rules/gsd.md', 'hooks/PreToolUse']) {
     const got = attributeEmittedPath(rel, 'cline');
     assert.equal(got.kind, 'code-derived', `${rel} must stay attributable`);
     assert.deepEqual(got.sources, [CLINE_BODY_SRC]);

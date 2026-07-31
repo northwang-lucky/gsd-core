@@ -95,7 +95,6 @@ test('cline descriptor declares runtime.hostBehaviors (the folded-in behaviors)'
   assert.equal(hb.reapplyCommand, '/gsd-update --reapply');
   assert.equal(hb.frontmatterDialect, 'cline');
   assert.equal(hb.skipSharedHooksInstall, true);
-  assert.equal(hb.localTargetIsProjectRoot, true);
   assert.equal(hb.clineRulesSurface, true);
   assert.equal(hb.localCommandsViaRules, true);
 });

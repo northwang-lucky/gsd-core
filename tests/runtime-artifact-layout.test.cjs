@@ -334,11 +334,13 @@ describe('resolveRuntimeArtifactLayout — cline', () => {
     assert.strictEqual(typeof layout.kinds[0].stage, 'function');
   });
 
-  test('cline local: no skills kinds (global-only, #782)', () => {
+  test('cline local: skills kind (project-level .cline/skills/)', () => {
     const layout = resolveRuntimeArtifactLayout('cline', FAKE_DIR, 'local');
     assert.strictEqual(layout.runtime, 'cline');
     assert.strictEqual(layout.configDir, FAKE_DIR);
-    assert.strictEqual(layout.kinds.length, 0);
+    assert.strictEqual(layout.kinds.length, 1);
+    assert.strictEqual(layout.kinds[0].kind, 'skills');
+    assert.strictEqual(layout.kinds[0].destSubpath, 'skills');
   });
 });
 

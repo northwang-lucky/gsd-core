@@ -893,7 +893,7 @@ describe('descriptor-driven parity: 13 non-probe registry runtimes × no-env-var
 // Fix introduces gsd-core/bin/lib/runtime-homes.cjs with first-class
 // support for every supported runtime, including:
 //   - hermes: nested skills/gsd/<skillName>/ layout (#2841)
-//   - cline: rules-based, returns null (no skills directory)
+//   - cline: skills-capable since v3.48.0 (#782), ~/.cline/skills
 //   - CLAUDE_CONFIG_DIR env var for Claude (was missing)
 //   - All other runtime-specific env vars
 

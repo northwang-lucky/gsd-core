@@ -346,7 +346,9 @@ const PROVENANCE_RULES = [
     // same source file. The wrapped `.js` file's NAME flows into the `.cmd`
     // bytes; its CONTENT never does — see the `sources` comment below for why
     // that rules out attributing to `hooks/<name>.js`.
-    pattern: /^(?!gsd-session\.json$).+$/,
+    // PreToolUse（无扩展名）是 cline 专属的 file-convention hook，内容来自
+    // runtime-hooks-surface 的代码字面量，由 cline-rules-code-derived 归属。
+    pattern: /^(?!gsd-session\.json$)(?!PreToolUse$).+$/,
     // `hooks/package.json` (the CommonJS marker) is ALSO code-derived, not built
     // from a tracked hooks/package.json source: its bytes are a fixed literal
     // emitted at install time by ensureCommonJsMarker (HOOKS_WINDOWS_SHIM_SRC,
@@ -433,8 +435,12 @@ const PROVENANCE_RULES = [
   {
     id: 'cline-rules-code-derived',
     kind: 'code-derived',
-    roots: ['.clinerules'],
-    pattern: /^(gsd\.md|hooks\/PreToolUse)$/,
+    // 现行布局：rules/gsd.md + hooks/PreToolUse；baseline（旧版安装树）仍会
+    // 出现 deprecated 的 .clinerules/gsd.md + .clinerules/hooks/PreToolUse，
+    // 同样归属到同一来源。hooks/PreToolUse 由 hooks-built 规则中的
+    // (?!PreToolUse$) 排除，避免双归属。
+    roots: ['rules', 'hooks', '.clinerules'],
+    pattern: /^(gsd\.md|PreToolUse|hooks\/PreToolUse)$/,
     sources: () => [CLINE_BODY_SRC],
   },
   {

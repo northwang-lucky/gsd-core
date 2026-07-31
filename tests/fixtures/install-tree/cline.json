@@ -1,7 +1,5 @@
 [
   ".agents/AGENTS.md",
-  ".clinerules/gsd.md",
-  ".clinerules/hooks/PreToolUse",
   ".gsd-profile",
   ".gsd/defaults.json",
   "agents/gsd-advisor-researcher.md",
@@ -330,6 +328,8 @@
   "gsd-core/workflows/validate-phase.md",
   "gsd-core/workflows/verify-phase.md",
   "gsd-core/workflows/verify-work.md",
+  "hooks/PreToolUse",
+  "rules/gsd.md",
   "scripts/changeset/README.md",
   "scripts/changeset/cli.cjs",
   "scripts/changeset/github-release-notes.cjs",

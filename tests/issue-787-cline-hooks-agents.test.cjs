@@ -4,22 +4,23 @@
 // text/behavior tests the shipped artifact. Per CONTRIBUTING.md exception matrix.
 
 /**
- * Issue #787 — elevate Cline: write hooks (.clinerules/hooks/) + AGENTS.md.
+ * Issue #787 — elevate Cline: write hooks + AGENTS.md.
  *
- * Verifies the installer now emits the Cline directory-form rules, a
- * PreToolUse lifecycle hook (Cline JSON stdin → {cancel,errorMessage,
- * contextModification} protocol), and a global ~/.agents/AGENTS.md instruction
- * target. Self-contained: does NOT depend on the #782 Cline skills work.
+ * Verifies the installer emits the Cline rules file (`<configDir>/rules/gsd.md`),
+ * a PreToolUse lifecycle hook (`<configDir>/hooks/PreToolUse`, Cline JSON
+ * stdin → {cancel,errorMessage,contextModification} protocol), and a global
+ * ~/.agents/AGENTS.md instruction target. The legacy `.clinerules/` layout is
+ * deprecated by Cline and cleaned up on install.
  *
  * Primary sources adjudicated:
- *  - https://cline.bot/blog/cline-v3-36-hooks
- *      hooks live at .clinerules/hooks/<EventName> (project) and
- *      ~/Documents/Cline/Rules/Hooks/ (global); executable scripts named
- *      exactly after the event with no extension; JSON stdin → JSON stdout
- *      with cancel / errorMessage / contextModification.
+ *  - https://docs.cline.bot/features/hooks
+ *      hooks live at .cline/hooks/<EventName> (project) and ~/.cline/hooks/
+ *      (global); executable scripts named exactly after the event with no
+ *      extension; JSON stdin → JSON stdout with cancel / errorMessage /
+ *      contextModification; payload nests the call under `preToolUse`.
  *  - https://docs.cline.bot/customization/cline-rules
- *      Cline processes all .md/.txt files inside a .clinerules/ directory and
- *      reads cross-tool global instructions from ~/.agents/AGENTS.md.
+ *      Cline reads rules from .cline/rules/ (and the deprecated .clinerules/)
+ *      plus cross-tool global instructions from ~/.agents/AGENTS.md.
  */
 
 'use strict';
@@ -51,10 +52,11 @@ const {
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
 describe('#787 Cline pure helpers', () => {
-  test('buildClineRulesBody returns GSD directory-form rules markdown', () => {
+  test('buildClineRulesBody returns GSD rules markdown with the engine prefix', () => {
     const body = buildClineRulesBody();
     assert.equal(typeof body, 'string');
-    assert.match(body, /GSD workflows live in `gsd-core\/workflows\/`/);
+    assert.match(body, /GSD workflows live in `\.cline\/gsd-core\/workflows\/`/);
+    assert.match(buildClineRulesBody('~/.cline/'), /GSD workflows live in `~\/\.cline\/gsd-core\/workflows\/`/);
     assert.ok(body.endsWith('\n'), 'rules body should end with a trailing newline');
   });
 
@@ -142,6 +144,61 @@ describe('#787 Cline pure helpers', () => {
     }
   });
 
+  // Regression: the hook originally parsed only flattened Claude-style fields
+  // (toolName/toolInput), while Cline's documented payload nests the call under
+  // `preToolUse` — the guard silently never fired against real Cline input.
+  // Payload shape per https://docs.cline.bot/features/hooks and cline/cline
+  // apps/vscode/src/core/hooks/hook-factory.ts.
+  test('PreToolUse hook cancels a .planning/ write with the real Cline nested payload', () => {
+    const tmp = createTempDir('gsd-787-hookcline-');
+    try {
+      const p = path.join(tmp, 'PreToolUse');
+      fs.writeFileSync(p, buildClinePreToolUseHook());
+      const res = spawnSync(process.execPath, [p], {
+        input: JSON.stringify({
+          taskId: 't1',
+          clineVersion: '3.48.0',
+          timestamp: 1736654400000,
+          workspacePath: '/repo',
+          preToolUse: { tool: 'write_to_file', parameters: { path: '.planning/ROADMAP.md', content: 'x' } },
+        }),
+        encoding: 'utf8',
+      });
+      assert.equal(res.status, 0);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.cancel, true, 'nested preToolUse payload must be intercepted');
+      assert.match(out.errorMessage, /\.planning/);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('PreToolUse hook allows ordinary writes/reads with the real Cline nested payload', () => {
+    const tmp = createTempDir('gsd-787-hookcline-allow-');
+    try {
+      const p = path.join(tmp, 'PreToolUse');
+      fs.writeFileSync(p, buildClinePreToolUseHook());
+      const write = spawnSync(process.execPath, [p], {
+        input: JSON.stringify({
+          taskId: 't1',
+          preToolUse: { tool: 'write_to_file', parameters: { path: 'src/index.ts', content: 'x' } },
+        }),
+        encoding: 'utf8',
+      });
+      assert.equal(JSON.parse(write.stdout).cancel, false, 'ordinary write must pass');
+      const read = spawnSync(process.execPath, [p], {
+        input: JSON.stringify({
+          taskId: 't1',
+          preToolUse: { tool: 'read_file', parameters: { path: '.planning/ROADMAP.md' } },
+        }),
+        encoding: 'utf8',
+      });
+      assert.equal(JSON.parse(read.stdout).cancel, false, 'read of .planning/ must pass');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
   test('mergeGsdAgentsMd creates a marker-delimited block when no file exists', () => {
     const tmp = createTempDir('gsd-787-agents-new-');
     try {
@@ -186,9 +243,9 @@ describe('#787 Cline pure helpers', () => {
   });
 });
 
-// ─── Local install: directory form + hook ───────────────────────────────────────
+// ─── Local install: rules + hook under .cline/ ──────────────────────────────────
 
-describe('#787 Cline local install — directory form + PreToolUse hook', () => {
+describe('#787 Cline local install — .cline/ layout + PreToolUse hook', () => {
   let tmpDir;
   let previousCwd;
 
@@ -203,56 +260,105 @@ describe('#787 Cline local install — directory form + PreToolUse hook', () => 
     cleanup(tmpDir);
   });
 
-  test('writes .clinerules/ as a directory containing gsd.md', () => {
+  test('writes rules/gsd.md and hooks/PreToolUse under .cline/', () => {
     install(false, 'cline');
-    const dir = path.join(tmpDir, '.clinerules');
-    assert.ok(fs.statSync(dir).isDirectory(), '.clinerules must be a directory');
-    const ruleFile = path.join(dir, 'gsd.md');
-    assert.ok(fs.existsSync(ruleFile), '.clinerules/gsd.md must exist');
-    assert.match(fs.readFileSync(ruleFile, 'utf8'), /gsd-core\/workflows\//);
+    const ruleFile = path.join(tmpDir, '.cline', 'rules', 'gsd.md');
+    assert.ok(fs.existsSync(ruleFile), '.cline/rules/gsd.md must exist');
+    assert.match(fs.readFileSync(ruleFile, 'utf8'), /\.cline\/gsd-core\/workflows\//);
+  });
+
+  test('keeps the gsd-core engine and agents under .cline/, not the project root', () => {
+    install(false, 'cline');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'gsd-core', 'workflows')), 'engine must live under .cline/');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'agents')), 'agents must live under .cline/');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'gsd-core')), 'project root must not get a gsd-core/ directory');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'agents')), 'project root must not get an agents/ directory');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'scripts')), 'project root must not get a scripts/ directory');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'gsd-file-manifest.json')), 'manifest must not sit at the project root');
   });
 
   test('writes an executable PreToolUse hook with no extension', () => {
     install(false, 'cline');
-    const hook = path.join(tmpDir, '.clinerules', 'hooks', 'PreToolUse');
-    assert.ok(fs.existsSync(hook), '.clinerules/hooks/PreToolUse must exist');
+    const hook = path.join(tmpDir, '.cline', 'hooks', 'PreToolUse');
+    assert.ok(fs.existsSync(hook), '.cline/hooks/PreToolUse must exist');
     if (process.platform !== 'win32') {
       const mode = fs.statSync(hook).mode;
       assert.ok((mode & 0o111) !== 0, 'PreToolUse must be executable');
     }
   });
 
-  test('migrates a legacy single-file .clinerules into the directory form', () => {
-    // Simulate a pre-#787 install that wrote a .clinerules FILE.
-    fs.writeFileSync(path.join(tmpDir, '.clinerules'), '# legacy file\n');
+  test('leaves a user-owned single-file .clinerules untouched', () => {
+    // Simulate a user who maintains their own legacy .clinerules FILE.
+    fs.writeFileSync(path.join(tmpDir, '.clinerules'), '# my own rules\n');
     install(false, 'cline');
-    const dir = path.join(tmpDir, '.clinerules');
-    assert.ok(fs.statSync(dir).isDirectory(), 'legacy file must be replaced by a directory');
-    assert.ok(fs.existsSync(path.join(dir, 'gsd.md')));
+    assert.equal(fs.readFileSync(path.join(tmpDir, '.clinerules'), 'utf8'), '# my own rules\n');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')));
   });
 
-  test('does not follow a symlinked .clinerules (writes the real directory in place)', () => {
+  test('removes GSD-managed files from a legacy .clinerules/ dir but keeps user files', () => {
+    // Simulate a pre-fix install: GSD artifacts + a user's own rule file.
+    const dir = path.join(tmpDir, '.clinerules');
+    fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gsd.md'), buildClineRulesBody());
+    fs.writeFileSync(path.join(dir, 'hooks', 'PreToolUse'), buildClinePreToolUseHook());
+    fs.writeFileSync(path.join(dir, 'mine.md'), '# user rule\n');
+    install(false, 'cline');
+    assert.ok(!fs.existsSync(path.join(dir, 'gsd.md')), 'GSD gsd.md must be removed');
+    assert.ok(!fs.existsSync(path.join(dir, 'hooks', 'PreToolUse')), 'GSD hook must be removed');
+    assert.ok(fs.existsSync(path.join(dir, 'mine.md')), 'user rule file must be preserved');
+  });
+
+  test('does not follow a symlinked .clinerules', () => {
     if (process.platform === 'win32') return; // symlink perms differ on Windows
-    // Point .clinerules at an external directory via symlink; install must NOT
-    // write GSD files through the link.
     const external = path.join(tmpDir, 'external-target');
     fs.mkdirSync(external);
     fs.symlinkSync(external, path.join(tmpDir, '.clinerules'));
     install(false, 'cline');
-    const dir = path.join(tmpDir, '.clinerules');
-    assert.ok(fs.lstatSync(dir).isDirectory() && !fs.lstatSync(dir).isSymbolicLink(),
-      '.clinerules must be a real directory, not the symlink');
+    assert.ok(fs.lstatSync(path.join(tmpDir, '.clinerules')).isSymbolicLink(), 'symlink must be left in place');
     assert.ok(!fs.existsSync(path.join(external, 'gsd.md')), 'must not write through the symlink target');
-    assert.ok(fs.existsSync(path.join(dir, 'gsd.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')));
   });
 
-  test('manifest tracks the new directory-form artifacts', () => {
+  test('removes the pre-fix root-level spill using the old manifest hashes', () => {
+    // Simulate the old layout: engine/agents/state dumped at the project root,
+    // tracked by a root-level manifest with sha256 hashes.
+    const crypto = require('node:crypto');
+    const hashFile = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    fs.mkdirSync(path.join(tmpDir, 'gsd-core', 'workflows'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'gsd-core', 'VERSION'), '1.9.0\n');
+    fs.mkdirSync(path.join(tmpDir, 'agents'));
+    fs.writeFileSync(path.join(tmpDir, 'agents', 'gsd-planner.md'), '# planner\n');
+    // 用户改过的文件必须保留
+    fs.writeFileSync(path.join(tmpDir, 'agents', 'gsd-executor.md'), '# user edited\n');
+    const manifest = {
+      version: '1.9.0',
+      files: {
+        'gsd-core/VERSION': hashFile(path.join(tmpDir, 'gsd-core', 'VERSION')),
+        'agents/gsd-planner.md': hashFile(path.join(tmpDir, 'agents', 'gsd-planner.md')),
+        'agents/gsd-executor.md': 'deadbeef'.repeat(8),
+        '.clinerules/gsd.md': 'deadbeef'.repeat(8),
+      },
+    };
+    fs.writeFileSync(path.join(tmpDir, 'gsd-file-manifest.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(tmpDir, 'gsd-install-state.json'), '{}');
+    fs.writeFileSync(path.join(tmpDir, '.gsd-profile'), 'full');
     install(false, 'cline');
-    const manifestPath = path.join(tmpDir, 'gsd-file-manifest.json');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'gsd-core')), 'hash-matched gsd-core/ must be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'agents', 'gsd-planner.md')), 'hash-matched file must be removed');
+    assert.ok(fs.existsSync(path.join(tmpDir, 'agents', 'gsd-executor.md')), 'user-modified file must be kept');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'gsd-file-manifest.json')), 'root manifest must be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'gsd-install-state.json')), 'root state must be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, '.gsd-profile')), 'root profile marker must be removed');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')), 'new layout must be installed');
+  });
+
+  test('manifest tracks the new-layout artifacts under .cline/', () => {
+    install(false, 'cline');
+    const manifestPath = path.join(tmpDir, '.cline', 'gsd-file-manifest.json');
     assert.ok(fs.existsSync(manifestPath));
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    assert.ok(manifest.files['.clinerules/gsd.md'], 'manifest should track .clinerules/gsd.md');
-    assert.ok(manifest.files['.clinerules/hooks/PreToolUse'], 'manifest should track the hook');
+    assert.ok(manifest.files['rules/gsd.md'], 'manifest should track rules/gsd.md');
+    assert.ok(manifest.files['hooks/PreToolUse'], 'manifest should track the hook');
   });
 });
 
@@ -303,11 +409,11 @@ describe('#787 Cline uninstall removes managed artifacts', () => {
     cleanup(tmpDir);
   });
 
-  test('local uninstall removes .clinerules/gsd.md and the hook', () => {
+  test('local uninstall removes .cline/rules/gsd.md and the hook', () => {
     install(false, 'cline');
-    assert.ok(fs.existsSync(path.join(tmpDir, '.clinerules', 'gsd.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')));
     uninstall(false, 'cline');
-    assert.ok(!fs.existsSync(path.join(tmpDir, '.clinerules', 'gsd.md')), 'gsd.md should be removed');
-    assert.ok(!fs.existsSync(path.join(tmpDir, '.clinerules', 'hooks', 'PreToolUse')), 'hook should be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')), 'gsd.md should be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'hooks', 'PreToolUse')), 'hook should be removed');
   });
 });

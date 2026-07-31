@@ -1919,12 +1919,12 @@ describe('installRuntimeArtifacts — cline idempotency', () => {
 //
 // Issue #782 explicitly requires that a global Cline install writes BOTH:
 //   - skills/<gsd-*>/SKILL.md     (skills for Cline >= v3.48)
-//   - .clinerules/gsd.md          (rules dir form introduced by #787)
+//   - rules/gsd.md                (rules file, current layout under the config dir)
 //
 // installRuntimeArtifacts() tests cover skills in isolation; this test exercises
 // the FULL install() code path to ensure neither artifact is silently dropped.
 
-describe('install() global cline — coexistence: skills AND .clinerules', () => {
+describe('install() global cline — coexistence: skills AND rules/gsd.md', () => {
   let tmpGlobalDir;
   let originalClineConfigDir;
 
@@ -1961,30 +1961,29 @@ describe('install() global cline — coexistence: skills AND .clinerules', () =>
     );
   });
 
-  test('global cline install writes .clinerules/gsd.md to the global config dir', () => {
+  test('global cline install writes rules/gsd.md to the global config dir', () => {
     captureConsole(() => install(true, 'cline'));
 
     // For a global Cline install, targetDir = getGlobalDir('cline') = CLINE_CONFIG_DIR.
-    // The cline-rules surface (#787) writes the .clinerules/ DIRECTORY form:
-    //   .clinerules/gsd.md  (rule file)
-    //   .clinerules/hooks/PreToolUse  (lifecycle hook)
-    const clinerulesMd = path.join(tmpGlobalDir, '.clinerules', 'gsd.md');
+    // The cline-rules surface (#787) writes the current layout:
+    //   rules/gsd.md  (rule file)
+    //   hooks/PreToolUse  (lifecycle hook)
+    const rulesMd = path.join(tmpGlobalDir, 'rules', 'gsd.md');
     assert.ok(
-      fs.existsSync(clinerulesMd),
-      `.clinerules/gsd.md must exist at ${clinerulesMd} — coexistence with skills broken for global cline (#782+#787)`
+      fs.existsSync(rulesMd),
+      `rules/gsd.md must exist at ${rulesMd} — coexistence with skills broken for global cline (#782+#787)`
     );
   });
 
-  test('global cline .clinerules/gsd.md contains GSD instructions', () => {
+  test('global cline rules/gsd.md contains GSD instructions', () => {
     captureConsole(() => install(true, 'cline'));
 
-    // #787 dir form: rule content lives in .clinerules/gsd.md, not a flat .clinerules file
-    const clinerulesMd = path.join(tmpGlobalDir, '.clinerules', 'gsd.md');
-    assert.ok(fs.existsSync(clinerulesMd), '.clinerules/gsd.md must exist');
-    const content = fs.readFileSync(clinerulesMd, 'utf8');
+    const rulesMd = path.join(tmpGlobalDir, 'rules', 'gsd.md');
+    assert.ok(fs.existsSync(rulesMd), 'rules/gsd.md must exist');
+    const content = fs.readFileSync(rulesMd, 'utf8');
     assert.ok(
       content.includes('GSD') || content.includes('gsd'),
-      '.clinerules/gsd.md must reference GSD'
+      'rules/gsd.md must reference GSD'
     );
   });
 });
@@ -2222,16 +2221,19 @@ describe('convertClaudeCommandToClineSkill — code-point-aware truncation (Fix 
   });
 });
 
-// ─── Fix 2 regression: cline local scope emits no skills ─────────────────────
+// ─── Cline local scope emits skills (current .cline/skills/ layout) ─────────
 //
-// resolveRuntimeArtifactLayout('cline', dir, 'local') must return 0 kinds.
-// installRuntimeArtifacts('cline', dir, 'local') must not write any skills.
+// resolveRuntimeArtifactLayout('cline', dir, 'local') returns the same skills
+// kind as global — Cline's current layout supports project-level .cline/skills/.
+// installRuntimeArtifacts('cline', dir, 'local') writes gsd-* skills under it.
 
 describe('resolveRuntimeArtifactLayout — cline scope-aware (Fix 2)', () => {
-  test('cline local: kinds.length === 0 (no skills for local scope)', () => {
+  test('cline local: 1 skills kind (project-level .cline/skills/)', () => {
     const { resolveRuntimeArtifactLayout } = require('../gsd-core/bin/lib/runtime-artifact-layout.cjs');
     const layout = resolveRuntimeArtifactLayout('cline', '/tmp/x', 'local');
-    assert.strictEqual(layout.kinds.length, 0, 'cline local must have 0 kinds');
+    assert.strictEqual(layout.kinds.length, 1, 'cline local must have 1 skills kind');
+    assert.strictEqual(layout.kinds[0].kind, 'skills');
+    assert.strictEqual(layout.kinds[0].destSubpath, 'skills');
   });
 
   test('cline global: kinds.length === 1 (skills kind)', () => {
@@ -2241,16 +2243,18 @@ describe('resolveRuntimeArtifactLayout — cline scope-aware (Fix 2)', () => {
     assert.strictEqual(layout.kinds[0].kind, 'skills');
   });
 
-  test('installRuntimeArtifacts cline local: no skills/ dir created', (t) => {
-    const configDir = createTempDir('gsd-cline-local-noskills-');
+  test('installRuntimeArtifacts cline local: skills/ dir created with gsd-* skills', (t) => {
+    const configDir = createTempDir('gsd-cline-local-skills-');
     t.after(() => cleanup(configDir));
 
     assert.doesNotThrow(() => installRuntimeArtifacts('cline', configDir, 'local', RESOLVED_CORE));
     const skillsDir = path.join(configDir, 'skills');
     assert.ok(
-      !fs.existsSync(skillsDir),
-      `skills/ must NOT be created for cline local install (Fix 2), but found ${skillsDir}`
+      fs.existsSync(skillsDir),
+      `skills/ must be created for cline local install, but missing at ${skillsDir}`
     );
+    const entries = fs.readdirSync(skillsDir);
+    assert.ok(entries.some((e) => e.startsWith('gsd-')), 'skills/ must contain gsd-* skill dirs');
   });
 });
   });

@@ -3013,10 +3013,11 @@ function convertClaudeAgentToCodebuddyAgent(content) {
 function convertClaudeToCliineMarkdown(content) {
   let converted = content;
   // Cline uses the same tool names as Claude Code — no tool name conversion needed
-  converted = converted.replace(/`\.\/CLAUDE\.md`/g, '`.clinerules`');
-  converted = converted.replace(/\.\/CLAUDE\.md/g, '.clinerules');
-  converted = converted.replace(/`CLAUDE\.md`/g, '`.clinerules`');
-  converted = converted.replace(/\bCLAUDE\.md\b/g, '.clinerules');
+  // CLAUDE.md 的对应物是 GSD 写入的规则文件 .cline/rules/gsd.md
+  converted = converted.replace(/`\.\/CLAUDE\.md`/g, '`.cline/rules/gsd.md`');
+  converted = converted.replace(/\.\/CLAUDE\.md/g, '.cline/rules/gsd.md');
+  converted = converted.replace(/`CLAUDE\.md`/g, '`.cline/rules/gsd.md`');
+  converted = converted.replace(/\bCLAUDE\.md\b/g, '.cline/rules/gsd.md');
   // Slash forms first (most specific — superset of bare forms)
   converted = converted.replace(/\.claude\/skills\//g, '.cline/skills/');
   converted = converted.replace(/\.\/\.claude\//g, './.cline/');
@@ -6744,30 +6745,31 @@ function stripGsdFromCopilotInstructions(content) {
   return content;
 }
 
-// ── Cline directory-form rules + hooks + AGENTS.md (issue #787) ────────────────
+// ── Cline rules + hooks + AGENTS.md (issue #787) ────────────────
 //
-// Cline v3.36 added a hooks system and a `.clinerules/` directory form. Because
-// `.clinerules` cannot be both a file AND a directory, emitting hooks under
-// `.clinerules/hooks/` requires migrating the rules content into the directory
-// form (`.clinerules/gsd.md`). Sources adjudicated:
-//   - https://cline.bot/blog/cline-v3-36-hooks
+// Cline 现行布局（sdk/packages/shared/src/storage/paths.ts）：规则在
+// <configDir>/rules/，hook 在 <configDir>/hooks/（local 为 ./.cline/，global 为
+// ~/.cline/）。旧的 `.clinerules/` 目录形态已被 cline 标记为 deprecated，
+// 安装时由 removeLegacyClineRulesDir 清理 GSD 管理的旧产物。
+// Sources adjudicated:
 //   - https://docs.cline.bot/customization/cline-rules
+//   - https://docs.cline.bot/features/hooks
 
 const GSD_AGENTS_MD_MARKER = '<!-- GSD Configuration — managed by gsd-core installer -->';
 const GSD_AGENTS_MD_CLOSE_MARKER = '<!-- End GSD Configuration -->';
 
 /**
- * The GSD instruction body shared by the Cline directory-form rules file and
- * the cross-tool AGENTS.md block. Self-contained — references only the gsd-core
- * engine layout, not the (separate) #782 Cline skills directory.
+ * The GSD instruction body shared by the Cline rules file and the cross-tool
+ * AGENTS.md block. enginePrefix 指向 gsd-core 引擎的安装位置（local 为
+ * `.cline/`，global 为 `~/.cline/`）。
  */
-function buildClineRulesBody() {
-  return hooksSurface.buildClineRulesBody();
+function buildClineRulesBody(enginePrefix) {
+  return hooksSurface.buildClineRulesBody(enginePrefix);
 }
 
 /** AGENTS.md body for the cross-tool global instruction target (`~/.agents/AGENTS.md`). */
-function buildClineAgentsMdBody() {
-  return hooksSurface.buildClineAgentsMdBody();
+function buildClineAgentsMdBody(enginePrefix) {
+  return hooksSurface.buildClineAgentsMdBody(enginePrefix);
 }
 
 /**
@@ -6813,9 +6815,11 @@ function stripGsdFromAgentsMd(content) {
 }
 
 /**
- * Write the full Cline runtime artifact set (directory-form rules + PreToolUse
- * hook) into targetDir, migrating a legacy single-file `.clinerules` if present.
- * For global installs, also merge the cross-tool ~/.agents/AGENTS.md target.
+ * Write the full Cline runtime artifact set (rules + PreToolUse hook) into
+ * targetDir (`<configDir>/rules/gsd.md`, `<configDir>/hooks/PreToolUse`),
+ * cleaning up GSD-managed artifacts from the legacy `.clinerules/` layout and
+ * (for local installs) the pre-fix root-level spill. For global installs, also
+ * merge the cross-tool ~/.agents/AGENTS.md target.
  *
  * Returns the list of manifest-relative paths written under targetDir (so the
  * caller can hash-track them).
@@ -7677,7 +7681,7 @@ const RUNTIME_CONTENT_DISPATCH = {
     md: (content) => convertClaudeToCliineMarkdown(content),
     js: (content) => {
       content = content.replace(/\.claude\/skills\//g, '.cline/skills/');
-      content = content.replace(/CLAUDE\.md/g, '.clinerules');
+      content = content.replace(/CLAUDE\.md/g, '.cline/rules/gsd.md');
       content = content.replace(/\bClaude Code\b/g, 'Cline');
       return content;
     },
@@ -8024,18 +8028,14 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
   const { isOpencode, isCodex, isCursor, isAugment, isQwen, isHermes, isCline } = runtimeFlags(runtime);
   const dirName = getDirName(runtime);
 
-  // Get the target directory based on runtime and install type. Cline local
-  // installs write to the project root (.clinerules/ lives at the root, not in
-  // a .cline/ subdir), mirroring the install() path resolution (#787).
-  // Descriptor-driven (ADR-1239 / #2090): cline local installs write to the
-  // project root (.clinerules/ lives at the root, not in a .cline/ subdir),
-  // mirroring the install() path resolution (#787). Folded from a hardcoded
-  // `runtime === 'cline'` branch into hostBehaviors.localTargetIsProjectRoot.
+  // Get the target directory based on runtime and install type. Local installs
+  // always root at ./<dirName> (e.g. .cline/) — the former cline exception that
+  // hoisted targetDir to the project root (hostBehaviors.localTargetIsProjectRoot,
+  // #787/#2090) also spilled the gsd-core engine, agents/, scripts/ and state
+  // files into the repo root, and is removed.
   const targetDir = isGlobal
     ? getGlobalConfigDir(runtime, explicitConfigDir)
-    : _hostBehaviors(runtime).localTargetIsProjectRoot
-      ? process.cwd()
-      : path.join(process.cwd(), dirName);
+    : path.join(process.cwd(), dirName);
 
   const locationLabel = isGlobal
     ? targetDir.replace(os.homedir(), '~')
@@ -8277,13 +8277,14 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
     // existence early-return, since it lives outside targetDir (#786).
   }
 
-  // 1b-cline. Non-layout Cline side-effects (issue #787): remove the
-  // directory-form rules + PreToolUse hook, and strip the GSD block from the
-  // global cross-tool ~/.agents/AGENTS.md target.
+  // 1b-cline. Non-layout Cline side-effects (issue #787): remove the legacy
+  // `.clinerules/` artifacts (local: project root; global: ~/.cline/), prune
+  // the current-layout rules/hooks dirs, clean the pre-fix local root spill,
+  // and strip the GSD block from the global cross-tool ~/.agents/AGENTS.md target.
   // Descriptor-driven (ADR-1239 / #2090): folded from `runtime === 'cline'`
   // into hostBehaviors.clineRulesSurface.
   if (_hostBehaviors(runtime).clineRulesSurface) {
-    const clinerulesDir = path.join(targetDir, '.clinerules');
+    const clinerulesDir = path.join(isGlobal ? targetDir : process.cwd(), '.clinerules');
     for (const rel of ['gsd.md', path.join('hooks', 'PreToolUse')]) {
       const p = path.join(clinerulesDir, rel);
       try {
@@ -8293,13 +8294,6 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
         }
       } catch { /* best-effort */ }
     }
-    // Also remove a legacy single-file .clinerules left by pre-#787 installs.
-    try {
-      if (fs.existsSync(clinerulesDir) && fs.statSync(clinerulesDir).isFile()) {
-        fs.unlinkSync(clinerulesDir);
-        removedCount++;
-      }
-    } catch { /* best-effort */ }
     // Prune now-empty GSD-created directories (leave any user-added rule files).
     for (const dir of [path.join(clinerulesDir, 'hooks'), clinerulesDir]) {
       try {
@@ -8307,6 +8301,38 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
           fs.rmdirSync(dir);
         }
       } catch { /* best-effort */ }
+    }
+    // pre-#787 安装曾以单文件形态写入 .clinerules——仅当内容确为 GSD 产物时才删除，
+    // 用户自己的同名规则文件保留
+    try {
+      if (fs.existsSync(clinerulesDir) && fs.statSync(clinerulesDir).isFile()) {
+        const content = fs.readFileSync(clinerulesDir, 'utf8');
+        if (content.includes('GSD Core') || content.includes('gsd-core')) {
+          fs.unlinkSync(clinerulesDir);
+          removedCount++;
+        }
+      }
+    } catch { /* best-effort */ }
+    // 现行布局的规则/hook：显式删除文件后补收空目录
+    for (const rel of [path.join('rules', 'gsd.md'), path.join('hooks', 'PreToolUse')]) {
+      const p = path.join(targetDir, rel);
+      try {
+        if (fs.existsSync(p)) {
+          fs.unlinkSync(p);
+          removedCount++;
+        }
+      } catch { /* best-effort */ }
+    }
+    for (const dir of [path.join(targetDir, 'hooks'), path.join(targetDir, 'rules'), path.join(targetDir, 'skills'), path.join(targetDir, 'agents')]) {
+      try {
+        if (fs.existsSync(dir) && fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length === 0) {
+          fs.rmdirSync(dir);
+        }
+      } catch { /* best-effort */ }
+    }
+    // local：清掉旧版本（targetDir 被抬到项目根的时代）洒在根目录的引擎与状态文件
+    if (!isGlobal) {
+      hooksSurface.cleanupLegacyClineLocalSpill(process.cwd());
     }
     if (isGlobal) {
       const agentsPath = path.join(os.homedir(), '.agents', 'AGENTS.md');
@@ -9547,13 +9573,14 @@ function writeManifest(configDir, runtime = DEFAULT_RUNTIME, options = {}) {
       }
     }
   }
-  // Track Cline directory-form artifacts in the manifest (issue #787): the
-  // rules file and the PreToolUse hook. (~/.agents/AGENTS.md is tracked via its
-  // marker block, not the per-configDir manifest, since it lives outside it.)
+  // Track Cline rules/hook artifacts in the manifest (issue #787): the rules
+  // file and the PreToolUse hook (current layout: rules/ + hooks/ under the
+  // config dir). (~/.agents/AGENTS.md is tracked via its marker block, not the
+  // per-configDir manifest, since it lives outside it.)
   // Descriptor-driven (ADR-1239 / #2090): folded from `isCline` into
   // hostBehaviors.clineRulesSurface.
   if (_hostBehaviors(runtime).clineRulesSurface) {
-    for (const rel of ['.clinerules/gsd.md', '.clinerules/hooks/PreToolUse']) {
+    for (const rel of ['rules/gsd.md', 'hooks/PreToolUse']) {
       const dest = path.join(configDir, rel);
       if (fs.existsSync(dest)) {
         manifest.files[rel] = fileHash(dest);
@@ -9606,7 +9633,8 @@ function writeManifest(configDir, runtime = DEFAULT_RUNTIME, options = {}) {
   const changesetInstallDir = path.join(configDir, 'scripts', 'changeset');
   if (fs.existsSync(changesetInstallDir)) {
     for (const file of fs.readdirSync(changesetInstallDir)) {
-      if (file.endsWith('.cjs')) {
+      // README.md 也是 GSD 管理文件（卸载清单 GSD_CHANGESET_FILES 已包含）
+      if (file.endsWith('.cjs') || file.endsWith('.md')) {
         manifest.files['scripts/changeset/' + file] = fileHash(path.join(changesetInstallDir, file));
       }
     }
@@ -10045,20 +10073,18 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
     }
   };
 
-  // Get the target directory based on runtime and install type.
-  // Descriptor-driven (ADR-1239 / #2090): cline local installs write to the
-  // project root (like Claude Code) — .clinerules lives at the root, not inside
-  // a .cline/ subdirectory. Folded from `isCline` into
-  // hostBehaviors.localTargetIsProjectRoot.
+  // Get the target directory based on runtime and install type. Local installs
+  // always root at ./<dirName> (e.g. .cline/) — the former cline exception that
+  // hoisted targetDir to the project root (hostBehaviors.localTargetIsProjectRoot,
+  // #787/#2090) also spilled the gsd-core engine, agents/, scripts/ and state
+  // files into the repo root, and is removed.
   // #791: antigravity local installs write to .agents/ (canonical). The legacy .agent/
   // directory is recognized by RUNTIME_DIRS (update-context) and _LEGACY_SCAN_SUBDIR_NAMES
   // but NOT auto-removed here; legacy .agent/ gsd artifacts are recognized but not
   // auto-removed on reinstall (dual-read fallback per issue #791 spec).
   const targetDir = isGlobal
     ? getGlobalConfigDir(runtime, explicitConfigDir)
-    : _hostBehaviors(runtime).localTargetIsProjectRoot
-      ? process.cwd()
-      : path.join(process.cwd(), dirName);
+    : path.join(process.cwd(), dirName);
 
   const locationLabel = isGlobal
     ? targetDir.replace(os.homedir(), '~')
@@ -10429,8 +10455,8 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
   //
   // Non-layout side-effects preserved inline:
   //   Hermes: writeHermesCategoryDescription (not a layout kind)
-  //   Cline global: skills emitted via layout; .clinerules still written below (#782)
-  //   Cline local: no skills (only .clinerules) — falls through to cline-rules surface
+  //   Cline global: skills emitted via layout; rules file still written below (#782)
+  //   Cline local: no skills (only rules) — falls through to cline-rules surface
   //   Claude local: copyWithPathReplacement + stale-skills cleanup
 
   // Layout-driven path for all skills-based runtimes (full and minimal modes).
@@ -10673,12 +10699,13 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
       }
     }
   } else if (_hostBehaviors(runtime).localCommandsViaRules) {
-    // Cline local install: rules-based only — commands are embedded in .clinerules (generated below).
-    // No skills/commands directory needed for local installs.
+    // Cline local install: rules-based only — commands are embedded in
+    // .cline/rules/gsd.md (generated below). No skills/commands directory
+    // needed for local installs.
     // Global installs are handled above by _isSkillsRuntime (#782).
     // Descriptor-driven (ADR-1239 / #2090): folded from `isCline` into
     // hostBehaviors.localCommandsViaRules.
-    console.log(`  ${green}✓${reset} Cline: commands will be available via .clinerules`);
+    console.log(`  ${green}✓${reset} Cline: commands will be available via .cline/rules`);
   } else if (_hostBehaviors(runtime).pluginOnlyInstall) {
     // pi (ADR-1239 / #2102 Stage 1): plugin-only install — pi's /gsd command is
     // registered programmatically by the native extension (pi/gsd.cjs →
@@ -12001,9 +12028,9 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
   }
 
   if (plan.installSurface === 'cline-rules') {
-    // Cline uses the `.clinerules/` directory form (issue #787): GSD rules live
-    // at .clinerules/gsd.md and a PreToolUse lifecycle hook at
-    // .clinerules/hooks/PreToolUse. Global installs also get ~/.agents/AGENTS.md.
+    // Cline current layout (issue #787): GSD rules live at rules/gsd.md and a
+    // PreToolUse lifecycle hook at hooks/PreToolUse under the config dir.
+    // Global installs also get ~/.agents/AGENTS.md.
     writeClineArtifacts(targetDir, isGlobal);
     // Re-run the manifest pass: these artifacts are written *after* the earlier
     // writeManifest() call, so a second pass is needed to hash-track them.
@@ -12538,7 +12565,7 @@ function buildRuntimePromptText() {
   return `  ${yellow}Which runtime(s) would you like to install for?${reset}\n\n  ${cyan}1${reset}) Claude Code  ${dim}(~/.claude)${reset}
   ${cyan}2${reset}) Antigravity  ${dim}(~/.gemini/antigravity)${reset}
   ${cyan}3${reset}) Augment      ${dim}(~/.augment)${reset}
-  ${cyan}4${reset}) Cline        ${dim}(.clinerules)${reset}
+  ${cyan}4${reset}) Cline        ${dim}(~/.cline)${reset}
   ${cyan}5${reset}) CodeBuddy    ${dim}(~/.codebuddy)${reset}
   ${cyan}6${reset}) Codex        ${dim}(~/.codex)${reset}
   ${cyan}7${reset}) Copilot      ${dim}(~/.copilot)${reset}
@@ -13412,6 +13439,8 @@ module.exports = {
     buildClinePreToolUseHook,
     writeClineArtifacts,
     mergeGsdAgentsMd,
+    removeLegacyClineRulesDir: hooksSurface.removeLegacyClineRulesDir,
+    cleanupLegacyClineLocalSpill: hooksSurface.cleanupLegacyClineLocalSpill,
     GSD_CURSOR_SESSION_HOOK_SCRIPT,
     GSD_CURSOR_POST_TOOL_HOOK_SCRIPT,
     GSD_CURSOR_PRE_TOOL_HOOK_SCRIPT,

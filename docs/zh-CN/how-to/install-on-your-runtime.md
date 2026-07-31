@@ -154,7 +154,7 @@ WINDSURF_CONFIG_DIR=~/.codeium/windsurf-alt npx @opengsd/gsd-core@latest --winds
 
 ### Cline
 
-Cline 使用基于规则的集成方式——GSD 以 `.clinerules` 形式安装，而非斜杠命令。
+Cline 使用基于规则的集成方式——GSD 以规则文件 + 生命周期 hook 形式安装，而非斜杠命令。
 
 ```bash
 # 全局安装（所有项目）
@@ -164,7 +164,7 @@ npx @opengsd/gsd-core@latest --cline --global
 npx @opengsd/gsd-core@latest --cline --local
 ```
 
-全局安装写入 `~/.cline/`。本地安装写入 `./.cline/`。规则由 Cline 自动加载——不注册自定义斜杠命令。
+全局安装写入 `~/.cline/`（规则在 `rules/gsd.md`，hook 在 `hooks/PreToolUse`，另含 `~/.cline/skills/` 与 `~/.agents/AGENTS.md`）。本地安装把所有内容收进 `./.cline/`，包括项目级 skills（`.cline/skills/` 下的 `gsd-*` SKILL.md）。规则与 skills 由 Cline 自动加载——不注册自定义斜杠命令。旧版本散落在项目根目录的文件（`gsd-core/`、`agents/`、`scripts/`、`.clinerules/` 等）会在下次安装时自动清理；你修改过的文件会被保留。
 
 ---
 

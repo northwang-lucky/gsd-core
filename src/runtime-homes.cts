@@ -13,7 +13,7 @@
  *             skills/<skillName>/ layout used by all other runtimes).
  *   cline   — Skills-capable since v3.48.0 (#782). SKILL.md files live at
  *             ~/.cline/skills/<skillName>/SKILL.md (same flat layout as cursor/codex).
- *             .clinerules is also emitted (rules-based compatibility layer).
+ *             rules/gsd.md is also emitted (rules-based compatibility layer).
  *   kimi    — Agent Skills are discovered from Kimi's generic user roots:
  *             ~/.config/agents/skills (recommended) then ~/.agents/skills,
  *             with Kimi selecting the first existing generic skills directory.

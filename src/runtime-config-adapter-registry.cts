@@ -15,7 +15,7 @@
  *     'settings-json'        → fall through to the shared settings.json accumulation.
  *     'codex-toml'           → early-return after writing codex.toml.
  *     'copilot-instructions' → early-return after writing .github/copilot-instructions.md.
- *     'cline-rules'          → early-return after writing .clinerules.
+ *     'cline-rules'          → early-return after writing rules/gsd.md + hooks/PreToolUse.
  *     'cursor-hooks-json'    → early-return after writing .cursor/hooks.json (issue #777).
  *     'profile-marker-only'  → early-return after writing only the profile marker.
  * - `writesSharedSettings` is the finishInstall writeSettings gate:

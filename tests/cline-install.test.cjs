@@ -117,7 +117,7 @@ describe('Cline markdown conversion', () => {
   test('replaces CLAUDE.md references', () => {
     const result = convertClaudeToCliineMarkdown('See CLAUDE.md for config');
     assert.ok(!result.includes('CLAUDE.md'));
-    assert.ok(result.includes('.clinerules'));
+    assert.ok(result.includes('.cline/rules/gsd.md'));
   });
 
   test('replaces .claude/skills/ with .cline/skills/', () => {
@@ -142,25 +142,38 @@ describe('Cline install (local)', () => {
     cleanup(tmpDir);
   });
 
-  test('install creates .clinerules directory with gsd.md (#787 directory form)', () => {
+  test('install creates .cline/rules/gsd.md', () => {
     install(false, 'cline');
-    const clinerulesDir = path.join(tmpDir, '.clinerules');
-    assert.ok(fs.existsSync(clinerulesDir), '.clinerules must exist after cline install');
-    assert.ok(fs.statSync(clinerulesDir).isDirectory(), '.clinerules must be a directory (#787)');
-    assert.ok(fs.existsSync(path.join(clinerulesDir, 'gsd.md')), '.clinerules/gsd.md must exist');
+    const ruleFile = path.join(tmpDir, '.cline', 'rules', 'gsd.md');
+    assert.ok(fs.existsSync(ruleFile), '.cline/rules/gsd.md must exist after cline install');
   });
 
-  test('.clinerules/gsd.md contains GSD instructions', () => {
+  test('.cline/rules/gsd.md contains GSD instructions', () => {
     install(false, 'cline');
-    const ruleFile = path.join(tmpDir, '.clinerules', 'gsd.md');
+    const ruleFile = path.join(tmpDir, '.cline', 'rules', 'gsd.md');
     const content = fs.readFileSync(ruleFile, 'utf8');
-    assert.ok(content.includes('GSD') || content.includes('gsd'), '.clinerules/gsd.md must reference GSD');
+    assert.ok(content.includes('GSD') || content.includes('gsd'), '.cline/rules/gsd.md must reference GSD');
   });
 
-  test('install creates gsd-core engine directory', () => {
+  test('install creates the gsd-core engine directory under .cline/', () => {
     install(false, 'cline');
-    const engineDir = path.join(tmpDir, 'gsd-core');
-    assert.ok(fs.existsSync(engineDir), 'gsd-core directory must exist after install');
+    const engineDir = path.join(tmpDir, '.cline', 'gsd-core');
+    assert.ok(fs.existsSync(engineDir), '.cline/gsd-core directory must exist after install');
+  });
+
+  test('install emits gsd-* skills under .cline/skills/ (project-level skills)', () => {
+    install(false, 'cline');
+    const skillsDir = path.join(tmpDir, '.cline', 'skills');
+    assert.ok(fs.existsSync(skillsDir), '.cline/skills must exist after cline local install');
+    const entries = fs.readdirSync(skillsDir);
+    assert.ok(entries.some((e) => e.startsWith('gsd-')), 'skills/ must contain gsd-* skill dirs');
+    // 抽查一个 SKILL.md 具备 cline skills spec 的 frontmatter
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true })
+      .flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    const skillFile = walk(skillsDir).find((f) => f.endsWith('SKILL.md'));
+    assert.ok(skillFile, 'at least one SKILL.md must exist');
+    const content = fs.readFileSync(skillFile, 'utf8');
+    assert.match(content, /^---\r?\nname: gsd-/, 'SKILL.md must carry cline-spec frontmatter');
   });
 
   test('finishInstall does not throw ERR_INVALID_ARG_TYPE for cline runtime (regression: null settingsPath guard)', () => {
