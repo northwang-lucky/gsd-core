@@ -444,6 +444,16 @@ const PROVENANCE_RULES = [
     sources: () => [CLINE_BODY_SRC],
   },
   {
+    id: 'cline-workflow-stubs',
+    kind: 'derived',
+    // workflows/gsd-<cmd>.md 是斜杠补全存根：描述来自 commands/gsd/<cmd>.md 的
+    // frontmatter，模板来自 runtime-hooks-surface 的代码字面量。
+    roots: ['workflows'],
+    pattern: /^gsd-(.+)\.md$/,
+    sources: (m) => [`commands/gsd/${m[1]}.md`],
+    transforms: [CLINE_BODY_SRC],
+  },
+  {
     id: 'agents-md-code-derived',
     kind: 'code-derived',
     roots: ['.agents'],

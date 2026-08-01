@@ -997,6 +997,7 @@ function buildClineRulesBody(enginePrefix = '.cline/'): string {
     '  the user runs a `/gsd-*` command.',
     `- GSD agents live in \`${enginePrefix}agents/\`. Use the matching agent when spawning subagents.`,
     `- GSD tools are at \`${enginePrefix}gsd-core/bin/gsd-tools.cjs\`. Run with \`node\`.`,
+    `- Slash-command stubs live in \`${enginePrefix}workflows/\` — invoke as \`/gsd-<cmd>.md\`.`,
     '- Planning artifacts live in `.planning/`. Never edit them outside a GSD workflow.',
     '- Do not apply GSD workflows unless the user explicitly asks for them.',
     '- When a GSD command triggers a deliverable (feature, fix, docs), offer the next',
@@ -1006,6 +1007,25 @@ function buildClineRulesBody(enginePrefix = '.cline/'): string {
 
 function buildClineAgentsMdBody(enginePrefix = '~/.cline/'): string {
   return buildClineRulesBody(enginePrefix);
+}
+
+/**
+ * A Cline workflow stub for one GSD command. Cline's `/` autocomplete surfaces
+ * workflow files (not nested member skills), so each stub gives `/gsd-<cmd>.md`
+ * a completable entry point that delegates to the real skill — the skill stays
+ * the single source of truth, the stub carries no logic of its own.
+ */
+function buildClineWorkflowStub(name: string, description: string, enginePrefix = '.cline/'): string {
+  return [
+    `# /gsd-${name}`,
+    '',
+    description || `Run the GSD ${name} workflow.`,
+    '',
+    `Load and follow the GSD skill named \`gsd-${name}\`: read the SKILL.md at`,
+    `\`${enginePrefix}skills/gsd-ns-*/skills/${name}/SKILL.md\` (glob — the namespace group`,
+    'directory varies) and execute its instructions with any arguments the user provided.',
+    '',
+  ].join('\n');
 }
 
 function buildClinePreToolUseHook(): string {
@@ -1186,7 +1206,16 @@ function cleanupLegacyClineLocalSpill(cwd: string): void {
   }
 }
 
-function writeClineArtifacts(targetDir: string, isGlobalInstall: boolean): string[] {
+interface ClineWorkflowCommand {
+  name: string;
+  description: string;
+}
+
+function writeClineArtifacts(
+  targetDir: string,
+  isGlobalInstall: boolean,
+  workflowCommands?: ClineWorkflowCommand[] | null,
+): string[] {
   const written: string[] = [];
   const enginePrefix = clineEngineRefPrefix(targetDir, isGlobalInstall);
 
@@ -1211,6 +1240,20 @@ function writeClineArtifacts(targetDir: string, isGlobalInstall: boolean): strin
   try { fs.chmodSync(hookPath, 0o755); } catch { /* Windows: hooks unsupported anyway */ }
   written.push('hooks/PreToolUse');
   console.log(`  ${green}✓${reset} Wrote hooks/PreToolUse`);
+
+  // 斜杠命令补全：为每个 GSD 命令写一个 workflow 存根（出现在 cline 的 `/` 菜单里）
+  if (Array.isArray(workflowCommands) && workflowCommands.length > 0) {
+    const workflowsDir = path.join(targetDir, 'workflows');
+    fs.mkdirSync(workflowsDir, { recursive: true });
+    for (const cmd of workflowCommands) {
+      fs.writeFileSync(
+        path.join(workflowsDir, `gsd-${cmd.name}.md`),
+        buildClineWorkflowStub(cmd.name, cmd.description, enginePrefix)
+      );
+      written.push(`workflows/gsd-${cmd.name}.md`);
+    }
+    console.log(`  ${green}✓${reset} Wrote ${workflowCommands.length} workflow stub(s) to workflows/`);
+  }
 
   if (isGlobalInstall) {
     try {
@@ -2528,6 +2571,7 @@ export = {
   buildClineRulesBody,
   buildClineAgentsMdBody,
   buildClinePreToolUseHook,
+  buildClineWorkflowStub,
   mergeGsdAgentsMd,
   writeClineArtifacts,
   removeLegacyClineRulesDir,

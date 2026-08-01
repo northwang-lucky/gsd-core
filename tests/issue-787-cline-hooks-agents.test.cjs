@@ -409,11 +409,13 @@ describe('#787 Cline uninstall removes managed artifacts', () => {
     cleanup(tmpDir);
   });
 
-  test('local uninstall removes .cline/rules/gsd.md and the hook', () => {
+  test('local uninstall removes .cline/rules/gsd.md, the hook and the workflow stubs', () => {
     install(false, 'cline');
     assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'workflows', 'gsd-ship.md')));
     uninstall(false, 'cline');
     assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'rules', 'gsd.md')), 'gsd.md should be removed');
     assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'hooks', 'PreToolUse')), 'hook should be removed');
+    assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'workflows', 'gsd-ship.md')), 'workflow stubs should be removed');
   });
 });

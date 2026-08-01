@@ -164,7 +164,7 @@ npx @opengsd/gsd-core@latest --cline --global
 npx @opengsd/gsd-core@latest --cline --local
 ```
 
-全局安装写入 `~/.cline/`（规则在 `rules/gsd.md`，hook 在 `hooks/PreToolUse`，另含 `~/.cline/skills/` 与 `~/.agents/AGENTS.md`）。本地安装把所有内容收进 `./.cline/`，包括项目级 skills（`.cline/skills/` 下的 `gsd-*` SKILL.md）。规则与 skills 由 Cline 自动加载——不注册自定义斜杠命令。旧版本散落在项目根目录的文件（`gsd-core/`、`agents/`、`scripts/`、`.clinerules/` 等）会在下次安装时自动清理；你修改过的文件会被保留。
+全局安装写入 `~/.cline/`（规则在 `rules/gsd.md`，hook 在 `hooks/PreToolUse`，另含 `~/.cline/skills/` 与 `~/.agents/AGENTS.md`）。本地安装把所有内容收进 `./.cline/`，包括项目级 skills（`.cline/skills/` 下的 `gsd-*` SKILL.md）。每个 GSD 命令还会生成一个 `workflows/gsd-*.md` 存根，让 `/gsd-*` 出现在 cline 的 `/` 补全菜单里（存根只转发到真实 SKILL.md，不含重复逻辑）。规则与 skills 由 Cline 自动加载——不注册自定义斜杠命令。旧版本散落在项目根目录的文件（`gsd-core/`、`agents/`、`scripts/`、`.clinerules/` 等）会在下次安装时自动清理；你修改过的文件会被保留。
 
 ---
 

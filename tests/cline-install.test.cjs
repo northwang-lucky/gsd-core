@@ -161,6 +161,17 @@ describe('Cline install (local)', () => {
     assert.ok(fs.existsSync(engineDir), '.cline/gsd-core directory must exist after install');
   });
 
+  test('install emits workflow stubs for `/` completion, delegating to the skills', () => {
+    install(false, 'cline');
+    const workflowsDir = path.join(tmpDir, '.cline', 'workflows');
+    assert.ok(fs.existsSync(workflowsDir), '.cline/workflows must exist after cline local install');
+    const stubs = fs.readdirSync(workflowsDir).filter((f) => f.startsWith('gsd-') && f.endsWith('.md'));
+    assert.ok(stubs.length > 60, `expected 60+ workflow stubs, got ${stubs.length}`);
+    const ship = fs.readFileSync(path.join(workflowsDir, 'gsd-ship.md'), 'utf8');
+    assert.match(ship, /# \/gsd-ship/);
+    assert.match(ship, /\.cline\/skills\/gsd-ns-\*\/skills\/ship\/SKILL\.md/);
+  });
+
   test('install emits gsd-* skills under .cline/skills/ (project-level skills)', () => {
     install(false, 'cline');
     const skillsDir = path.join(tmpDir, '.cline', 'skills');

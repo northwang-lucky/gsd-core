@@ -6815,17 +6815,17 @@ function stripGsdFromAgentsMd(content) {
 }
 
 /**
- * Write the full Cline runtime artifact set (rules + PreToolUse hook) into
- * targetDir (`<configDir>/rules/gsd.md`, `<configDir>/hooks/PreToolUse`),
- * cleaning up GSD-managed artifacts from the legacy `.clinerules/` layout and
- * (for local installs) the pre-fix root-level spill. For global installs, also
- * merge the cross-tool ~/.agents/AGENTS.md target.
+ * Write the full Cline runtime artifact set (rules + PreToolUse hook + workflow
+ * stubs) into targetDir (`<configDir>/rules/gsd.md`, `<configDir>/hooks/PreToolUse`,
+ * `<configDir>/workflows/gsd-*.md`), cleaning up GSD-managed artifacts from the
+ * legacy `.clinerules/` layout and (for local installs) the pre-fix root-level
+ * spill. For global installs, also merge the cross-tool ~/.agents/AGENTS.md target.
  *
  * Returns the list of manifest-relative paths written under targetDir (so the
  * caller can hash-track them).
  */
-function writeClineArtifacts(targetDir, isGlobalInstall) {
-  return hooksSurface.writeClineArtifacts(targetDir, isGlobalInstall);
+function writeClineArtifacts(targetDir, isGlobalInstall, workflowCommands) {
+  return hooksSurface.writeClineArtifacts(targetDir, isGlobalInstall, workflowCommands);
 }
 
 // ── Cursor hooks.json reconciler (issue #777) ────────────────────────────────
@@ -8313,7 +8313,7 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
         }
       }
     } catch { /* best-effort */ }
-    // 现行布局的规则/hook：显式删除文件后补收空目录
+    // 现行布局的规则/hook/workflow 存根：显式删除文件后补收空目录
     for (const rel of [path.join('rules', 'gsd.md'), path.join('hooks', 'PreToolUse')]) {
       const p = path.join(targetDir, rel);
       try {
@@ -8323,7 +8323,17 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
         }
       } catch { /* best-effort */ }
     }
-    for (const dir of [path.join(targetDir, 'hooks'), path.join(targetDir, 'rules'), path.join(targetDir, 'skills'), path.join(targetDir, 'agents')]) {
+    const clineWorkflowsDir = path.join(targetDir, 'workflows');
+    try {
+      if (fs.existsSync(clineWorkflowsDir)) {
+        for (const file of fs.readdirSync(clineWorkflowsDir)) {
+          if (file.startsWith('gsd-') && file.endsWith('.md')) {
+            try { fs.unlinkSync(path.join(clineWorkflowsDir, file)); removedCount++; } catch { /* best-effort */ }
+          }
+        }
+      }
+    } catch { /* best-effort */ }
+    for (const dir of [path.join(targetDir, 'hooks'), path.join(targetDir, 'rules'), path.join(targetDir, 'workflows'), path.join(targetDir, 'skills'), path.join(targetDir, 'agents')]) {
       try {
         if (fs.existsSync(dir) && fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length === 0) {
           fs.rmdirSync(dir);
@@ -9584,6 +9594,15 @@ function writeManifest(configDir, runtime = DEFAULT_RUNTIME, options = {}) {
       const dest = path.join(configDir, rel);
       if (fs.existsSync(dest)) {
         manifest.files[rel] = fileHash(dest);
+      }
+    }
+    // 斜杠命令补全用的 workflow 存根（workflows/gsd-*.md）
+    const clineWorkflowsDir = path.join(configDir, 'workflows');
+    if (fs.existsSync(clineWorkflowsDir)) {
+      for (const file of fs.readdirSync(clineWorkflowsDir)) {
+        if (file.startsWith('gsd-') && file.endsWith('.md')) {
+          manifest.files['workflows/' + file] = fileHash(path.join(clineWorkflowsDir, file));
+        }
       }
     }
   }
@@ -12028,10 +12047,25 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
   }
 
   if (plan.installSurface === 'cline-rules') {
-    // Cline current layout (issue #787): GSD rules live at rules/gsd.md and a
-    // PreToolUse lifecycle hook at hooks/PreToolUse under the config dir.
+    // Cline current layout (issue #787): rules at rules/gsd.md, PreToolUse hook
+    // at hooks/PreToolUse, and per-command workflow stubs at workflows/gsd-*.md
+    // — cline's `/` autocomplete surfaces workflow files (skills are scanned
+    // one level deep only, so nested member skills never appear there).
     // Global installs also get ~/.agents/AGENTS.md.
-    writeClineArtifacts(targetDir, isGlobal);
+    const _clineWorkflowCommands = [];
+    try {
+      const _profileSkillSet = _resolvedProfile.skills === '*' ? null : new Set(_resolvedProfile.skills);
+      for (const file of fs.readdirSync(_commandsDir)) {
+        if (!file.endsWith('.md')) continue;
+        const cmdName = file.replace(/\.md$/, '');
+        if (_profileSkillSet && !_profileSkillSet.has(cmdName)) continue;
+        const content = fs.readFileSync(path.join(_commandsDir, file), 'utf8');
+        const { frontmatter } = extractFrontmatterAndBody(content);
+        const description = (frontmatter && extractFrontmatterField(frontmatter, 'description')) || '';
+        _clineWorkflowCommands.push({ name: cmdName, description });
+      }
+    } catch { /* workflow stubs are additive — never block the install */ }
+    writeClineArtifacts(targetDir, isGlobal, _clineWorkflowCommands);
     // Re-run the manifest pass: these artifacts are written *after* the earlier
     // writeManifest() call, so a second pass is needed to hash-track them.
     writeManifest(targetDir, runtime, { mode: _effectiveInstallMode, scope: isGlobal ? 'global' : 'local' });

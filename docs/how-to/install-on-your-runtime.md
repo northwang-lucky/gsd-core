@@ -330,6 +330,10 @@ GSD writes Cline's current config layout (rules and hooks under the config dir):
   direct edits and otherwise allows the operation; it fails open, so a hook error never blocks
   you. Cline runs hooks on macOS and Linux only, and hooks must be enabled in Cline's settings
   (Hooks tab toggle, or `cline config set hooks-enabled=true` for the CLI).
+- **`workflows/gsd-*.md`** — one thin workflow stub per GSD command. Cline's `/` autocomplete
+  surfaces workflow files (skills are discovered one level deep, so the nested member skills
+  never appear there); each stub delegates to the real SKILL.md, giving every `/gsd-*` command
+  a completable entry point with no duplicated logic.
 
 **Global install additionally:**
 

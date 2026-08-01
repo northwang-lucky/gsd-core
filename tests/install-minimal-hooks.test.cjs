@@ -391,7 +391,7 @@ describe('install: --minimal honoured for every runtime in --local mode', () => 
 
 describe('install: Cline --minimal (skills + rules)', () => {
   for (const scope of ['global', 'local']) {
-    test(`cline --${scope} --minimal: mode=minimal, rules/gsd.md present`, () => {
+    test(`cline --${scope} --minimal: mode=minimal, rules/gsd.md present, allowlisted workflow stubs only`, () => {
       const { manifest, configDir, root } = runMinimalInstall({
         runtime: 'cline', scope, extraArgs: ['--minimal'],
       });
@@ -400,6 +400,11 @@ describe('install: Cline --minimal (skills + rules)', () => {
         assert.strictEqual(manifest.mode, 'minimal');
         assert.strictEqual(manifestAgentCount(manifest), 0);
         assert.ok(fs.existsSync(path.join(configDir, 'rules', 'gsd.md')));
+        const stubs = fs.existsSync(path.join(configDir, 'workflows'))
+          ? fs.readdirSync(path.join(configDir, 'workflows')).filter((f) => f.startsWith('gsd-'))
+          : [];
+        assert.strictEqual(stubs.length, MINIMAL_SKILL_ALLOWLIST.length,
+          'minimal mode must emit exactly the allowlisted workflow stubs');
       } finally {
         cleanup(root);
       }
