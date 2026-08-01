@@ -784,7 +784,8 @@ const capabilities = {
         "frontmatterDialect": "cline",
         "skipSharedHooksInstall": true,
         "clineRulesSurface": true,
-        "localCommandsViaRules": true
+        "localCommandsViaRules": true,
+        "agentFileExtension": ".yaml"
       }
     }
   },
@@ -5248,7 +5249,8 @@ const runtimes = {
         "frontmatterDialect": "cline",
         "skipSharedHooksInstall": true,
         "clineRulesSurface": true,
-        "localCommandsViaRules": true
+        "localCommandsViaRules": true,
+        "agentFileExtension": ".yaml"
       }
     }
   },

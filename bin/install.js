@@ -8519,13 +8519,13 @@ function uninstall(isGlobal, runtime = DEFAULT_RUNTIME) {
     }
   }
 
-  // 3. Remove GSD agents (gsd-*.md files only)
+  // 3. Remove GSD agents (gsd-*.md / gsd-*.yaml files only)
   const agentsDir = path.join(targetDir, 'agents');
   if (fs.existsSync(agentsDir)) {
     const files = fs.readdirSync(agentsDir);
     let agentCount = 0;
     for (const file of files) {
-      if (file.startsWith('gsd-') && file.endsWith('.md')) {
+      if (file.startsWith('gsd-') && (file.endsWith('.md') || file.endsWith('.yaml') || file.endsWith('.yml'))) {
         fs.unlinkSync(path.join(agentsDir, file));
         agentCount++;
       }
@@ -9578,7 +9578,7 @@ function writeManifest(configDir, runtime = DEFAULT_RUNTIME, options = {}) {
     }
   } else if (fs.existsSync(agentsDir)) {
     for (const file of fs.readdirSync(agentsDir)) {
-      if (file.startsWith('gsd-') && (file.endsWith('.md') || file.endsWith('.toml'))) {
+      if (file.startsWith('gsd-') && (file.endsWith('.md') || file.endsWith('.toml') || file.endsWith('.yaml') || file.endsWith('.yml'))) {
         manifest.files['agents/' + file] = fileHash(path.join(agentsDir, file));
       }
     }
@@ -11083,8 +11083,16 @@ function install(isGlobal, runtime = DEFAULT_RUNTIME, options = {}) {
         // the ternary always evaluated to entry.name in practice; its
         // .agent.md suffix is applied by the descriptor-driven fold in
         // src/install-engine.cts (hostBehaviors.agentFileExtension).
-        const destName = entry.name;
+        // cline declares agentFileExtension: ".yaml" — Cline's configured-agent
+        // loader (sdk configured-agent-config.ts) only reads .yml/.yaml files
+        // from <configDir>/agents/, so .md agents were invisible to it.
+        const _agentExt = _hostBehaviors(runtime).agentFileExtension;
+        const destName = _agentExt ? entry.name.replace(/\.md$/, _agentExt) : entry.name;
         fs.writeFileSync(path.join(agentsDest, destName), content);
+        // 新扩展名落地后，同 stem 的旧 .md 是上一版安装的残留，清掉避免双注册
+        if (_agentExt && _agentExt !== '.md') {
+          try { fs.unlinkSync(path.join(agentsDest, entry.name)); } catch { /* not present */ }
+        }
       }
     }
     if (verifyInstalled(agentsDest, 'agents')) {

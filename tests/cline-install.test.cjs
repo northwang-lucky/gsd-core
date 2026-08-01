@@ -161,6 +161,27 @@ describe('Cline install (local)', () => {
     assert.ok(fs.existsSync(engineDir), '.cline/gsd-core directory must exist after install');
   });
 
+  test('install emits agents as .yaml so Cline registers them as configured subagents', () => {
+    install(false, 'cline');
+    const agentsDir = path.join(tmpDir, '.cline', 'agents');
+    const entries = fs.readdirSync(agentsDir);
+    // Cline 的 configured-agent 加载器只读 .yml/.yaml（configured-agent-config.ts）
+    assert.ok(entries.length > 0, 'agents must be installed');
+    assert.ok(entries.every((f) => f.endsWith('.yaml')), `agents must be .yaml, got: ${entries.filter((f) => !f.endsWith('.yaml')).join(', ')}`);
+    const planner = fs.readFileSync(path.join(agentsDir, 'gsd-planner.yaml'), 'utf8');
+    assert.match(planner, /^---\r?\nname: gsd-planner\r?\ndescription: /);
+    assert.ok(planner.split(/\r?\n---\r?\n/).length >= 2, 'yaml must carry a systemPrompt body after the frontmatter');
+  });
+
+  test('reinstall removes legacy .md agents left by older installs', () => {
+    install(false, 'cline');
+    // 模拟旧版本安装的 .md 形态 agents
+    fs.writeFileSync(path.join(tmpDir, '.cline', 'agents', 'gsd-planner.md'), '# legacy\n');
+    install(false, 'cline');
+    assert.ok(!fs.existsSync(path.join(tmpDir, '.cline', 'agents', 'gsd-planner.md')), 'legacy .md agent must be removed');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.cline', 'agents', 'gsd-planner.yaml')));
+  });
+
   test('install emits workflow stubs for `/` completion, delegating to the skills', () => {
     install(false, 'cline');
     const workflowsDir = path.join(tmpDir, '.cline', 'workflows');

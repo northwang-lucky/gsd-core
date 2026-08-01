@@ -289,6 +289,17 @@ const PROVENANCE_RULES = [
     pattern: /^([^/]+)\.agent\.md$/,
     sources: (m) => [`agents/${m[1]}.md`],
   },
+  {
+    id: 'cline-agent-yaml',
+    kind: 'derived',
+    roots: ['agents'],
+    // Cline 的 configured-agent 加载器只读 .yml/.yaml，agents 以 .yaml 发射；
+    // 源仍是 agents/<name>.md，经 convertClaudeAgentToClineAgent 转换。
+    // 排除 gsd.yaml：那是 Kimi 的 ROOT agent（代码字面量生成，无对应 repo 文件）。
+    pattern: /^(?!gsd\.yaml$)([^/]+)\.yaml$/,
+    sources: (m) => [`agents/${m[1]}.md`],
+    transforms: AGENT_TRANSFORM_SRCS,
+  },
 
   // ── Derived from another repo file ─────────────────────────────────────────
   {

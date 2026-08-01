@@ -1,0 +1,4 @@
+---
+type: Fixed
+---
+**Cline agents are now emitted as `.yaml` so Cline actually registers them as configured subagents.** Cline's configured-agent loader (`configured-agent-config.ts`) searches `<workspace>/.cline/agents/` and `~/.cline/agents/` but only reads `.yml`/`.yaml` files — the previously emitted `gsd-*.md` agents were skipped by extension, so they never became callable subagents (they only worked as prompt files the model read on demand). Agents now install as `gsd-*.yaml` (same name+description frontmatter with the prompt body as `systemPrompt`, matching Cline's `ConfiguredAgentFrontmatterSchema`), via the descriptor-driven `hostBehaviors.agentFileExtension` mechanism. Reinstall removes the legacy same-stem `.md` files, the manifest tracks the `.yaml` files, and uninstall removes them.

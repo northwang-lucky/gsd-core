@@ -334,6 +334,9 @@ GSD writes Cline's current config layout (rules and hooks under the config dir):
   surfaces workflow files (skills are discovered one level deep, so the nested member skills
   never appear there); each stub delegates to the real SKILL.md, giving every `/gsd-*` command
   a completable entry point with no duplicated logic.
+- **`agents/gsd-*.yaml`** — the GSD subagent roster in Cline's configured-agent format
+  (`name`/`description` frontmatter + the prompt as `systemPrompt`), so Cline's subagent
+  loader registers them as callable agents rather than inert markdown.
 
 **Global install additionally:**
 
